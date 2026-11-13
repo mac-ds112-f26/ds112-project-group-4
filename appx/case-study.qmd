@@ -3,3 +3,7 @@ title: "Case Study"
 ---
 
 Your case study go here.
+
+https://pudding.cool/2017/02/new-slang/
+
+In the 2017 Pudding article data visualization was used to tell a story about slang and how it evolves and the geographical and political ties current slang has. The author had taken google search data and compiled it into a set of 43 words from 2013-2016. These words popularity were then charted against each other over time. This search data was then broken further down into geographical regions over time in the next section. A subset of these words within a politcal context are then taken such as WOKE, SJW, TRIGGERED, AND GASLIGHTING. The geographical origins and popularity of these words were taken into account and then cross refrenced with common knowleges of the geographies and political climates of the time period 2016-2017. This offers a story structure as it takes a large set of data and slowly condenses it into separate smaller datasets which are able to have stories and narratives around them.
