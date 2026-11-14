@@ -1,0 +1,20 @@
+---
+title: "Case Study Summary"
+author: "Linnea Joanen"
+date: today
+format:
+  html:
+    toc: false
+    theme: cosmo
+---
+
+## Text analysis of Trump's tweets confirms he writes only the (angrier) Android half
+
+**Source:** [Text analysis of Trump's tweets confirms he writes only the (angrier) Android half by David Robinson](https://varianceexplained.org/r/trump-tweets/)
+
+::: {.callout-note title="My Summary"}
+David Robinson provides his R coding process for importing, wrangling, and modeling the data. He first encounters a limitation with Twitter's 3200-tweet retrieval limit before cleaning the data, separating the tweets posted from Apple devices and Android devices. Robinson uses log ratios and the NRC Word-Emotion Association lexicon to find a pattern: a more formal tone and event announcements often accompany iPhone tweets, while Android tweets have a disorganized, angry tone. Robinson suggests that Trump himself tweets from the Android device, while his PR team tweets from the iPhone. However, there are exceptions, which could either suggest a break in his routine or staffers imitating his cadence. 
+:::
+
+---
+
