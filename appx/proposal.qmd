@@ -2,11 +2,15 @@
 title: "Proposal"
 ---
 
-PROJECT CHECKPOINT #1 PROPOSAL
+## Title
 
-- Title: Pokemon Trading Card Prices
+Pokemon Trading Card Prices
 
-- Group Members: Ethan De Brauw, Linnea Joanen, Eli Stottrup
+## Group Members
+
+- Ethan De Brauw, 
+- Linnea Joanen
+- Eli Stottrup
 
 - Short Description: Cost-benefit analysis of Pokemon card market
 
