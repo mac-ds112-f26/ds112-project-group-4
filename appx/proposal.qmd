@@ -2,8 +2,6 @@
 title: "Proposal"
 ---
 
-PROJECT CHECKPOINT #1 PROPOSAL
-
 - Title: Pokemon Trading Card Prices
 
 - Group Members: Ethan De Brauw, Linnea Joanen, Eli Stottrup
