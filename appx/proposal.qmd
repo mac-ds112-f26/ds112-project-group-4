@@ -2,7 +2,9 @@
 title: "Proposal"
 ---
 
-- Title: Pokemon Trading Card Prices
+## Title
+
+Pokemon Trading Card Prices
 
 - Group Members: Ethan De Brauw, Linnea Joanen, Eli Stottrup
 
