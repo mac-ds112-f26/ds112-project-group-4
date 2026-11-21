@@ -1,0 +1,151 @@
+---
+title: "Member 3 First Name & Last Name Initial"
+---
+
+Your exploratory data analysis of the team datasets go here.
+
+
+```{r}
+library(tidyverse)
+pokemon <- read.csv("/Users/ethandebrauw/Documents/GitHub/ds112/ds112-project-group-4/eda/EXCrystalGuardiansProductsAndPrices.csv")
+```
+
+Starting my exploratory data analysis:
+
+> I want to get a feel for how prices are distributed before I start exploring potential causes. So here, I'm going to make histograms of three variables: lowPrice, midPrice, and highPrice. My research question is: how are prices distributed across the range of pokemon in the dataset? 
+
+```{r}
+pokemon |>
+  ggplot(aes(x = lowPrice)) +
+  geom_histogram()
+```
+```{r}
+pokemon |>
+  ggplot(aes(x = midPrice)) +
+  geom_histogram()
+```
+
+```{r}
+pokemon |>
+  ggplot(aes(x = highPrice)) +
+  geom_histogram()
+```
+
+> The data is clearly skewed very heavily towards a few select cards that have much higher valuations than all of the other cards. That being said, for many cards, there seems to be a boost for the price max, indicating that several pokemon cards of high quality can have high prices. These visualizations are limited though, they don't show the nuances within price ranges, partially because of how skewed the data is, which is worth keeping in mind if it can be rectified in future visualizations.
+
+
+Now, I want to try to use some otehr packages to get a feel for the data beyond what I already know how to do with the tools we've learned in class. 
+
+```{r}
+library(arsenal)
+library(DataExplorer)
+```
+```{r}
+plot_intro(pokemon)
+```
+```{r}
+pokemon %>%
+  tableby( ~ ., data = .) %>%
+  summary()
+```
+
+Little bit too much going on there, so let's try a different iteration:
+
+```{r}
+pokemon %>%
+  tableby(highPrice ~ ., data = .) %>%
+  summary()
+```
+
+Honestly resembles a more confusing version of the data we already had. What if I used the pivot_longer() function to better understand the distribution of price?
+
+> I want to understand and compare lowPrice, midPrice, and highPrice. To that end, my research question is: Are lowPrice, midPrice, and highPrice connected?
+
+```{r}
+pokemon |>
+  pivot_longer(cols = c(lowPrice, midPrice, highPrice), 
+               names_to = "price_category",
+               values_to = "price") |>
+  ggplot(aes(x = price, fill = price_category)) +
+           geom_histogram()
+```
+
+> Every visualization of this dataset is extremely limited, because of these outliers that skew the graphs and make it impossible to see the differences at each level. Given that isn't an option, seeing if there is a correlation between prices seems useful.
+
+```{r}
+pokemon |>
+  ggplot(aes(x = lowPrice, y = highPrice)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+```
+```{r}
+pokemon |>
+  ggplot(aes(x = midPrice, y = highPrice)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+```
+
+```{r}
+pokemon |>
+  ggplot(aes(x = lowPrice, y = midPrice)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+```
+
+
+> Same problem: these graphs are so skewed by certain cards, the data is not evenly distributed enough to definitively prove correlation across the range of data points. That being said, there seems to be a reasonably strong correlation between low price and mid price, which isn't enormously useful in predicting which cards are going to be the most valuable, but it is somewhat useful.
+
+
+Trying to predict highPrice with other variables:
+
+> Now looking into other variables, it seems likely that extRarity should be a good predictor of value, so let's see what happens when I graph it against high price. My research question is: are extRarity and highPrice connected/correlated?
+
+Bar chart to give a feel for how many of each rarity there are:
+
+```{r}
+pokemon |>
+  ggplot(aes(x = extRarity)) +
+  geom_bar()
+```
+
+Now taking that data, how does this map with price?
+
+```{r}
+pokemon |>
+  ggplot(aes(x = highPrice)) +
+  geom_boxplot() +
+  facet_wrap(~extRarity)
+```
+
+> Based on this graph, patterns are beggining to emerge: common, uncommon, rares, and Holo rares don't tend to be particularly valuable on the higher end. Ultra rares though tend to be very valuable. 
+
+
+What other variables are connected/correlated with highPrice?
+
+Let's try extCardType next.
+
+Same process:
+
+```{r}
+pokemon |>
+  ggplot(aes(x = extCardType)) +
+  geom_bar() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+pokemon |>
+  ggplot(aes(x = highPrice)) +
+  geom_boxplot() +
+  facet_wrap(~extCardType) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+> This visualization is way too busy, but it still manages to get a good amount of information across. Pokemon tools, stadium cards, supporters, trainers, energies and items seem to have very little value at all. The more standard cards have more value, with the most valuable type by far being lightning metal, and with psychic type having some exceptionally valuable cards as well. Still, every graph is too small, and they are hard to compare, especially with cards valuing between $0 and $500.
+
+
+This is gonna do it for my exploratory data analysis! I tried out a few tools, got a feel for the data, wrangled it a little, and now have a better plan for what I want to go going forward. If there was anything I missed, please let me know. 
+
+
+
+
+
