@@ -1,0 +1,491 @@
+---
+title: "EDA for Pokemon TCG sets: EX Dragon Frontiers (2006) vs. Prismatic Evolutions (2025)." 
+subtitle: "by Linnea J."
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: flatly
+    code_folding: show
+---
+
+# 1. Importing data --------------------------------------------
+
+```{r}
+install.packages(c("readr", "dplyr", "tidyr", "ggplot2", "stringr", "forcats", "lubridate", "tibble", "scales"))
+```
+
+```{r}
+library(readr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(stringr)
+library(forcats)
+library(lubridate)
+library(tibble)
+library(scales)
+```
+
+```{r}
+frontiers_raw <- read_csv("EXDragonFrontiersProductsAndPrices.csv")
+
+prismatic_raw <- read_csv("SVPrismaticEvolutionsProductsAndPrices.csv")
+```
+
+
+```{r}
+theme_set(theme_minimal(base_size = 12))
+set_colours <- c("EX Dragon Frontiers" = "#284fa8", "Prismatic Evolutions" = "#c048db")
+```
+
+## 1.2 Helpers ----
+
+```{r}
+# Helper: print a heading in the console
+section <- function(title) {
+  cat("\n", strrep("=", 70), "\n", title, "\n", strrep("=", 70), "\n", sep = "")
+}
+
+# Helper: show a plot and save it as a PNG
+show_plot <- function(p, file, width = 9, height = 5) {
+  print(p)
+  ggsave(file.path("eda_plots", file), p, width = width, height = height, dpi = 150, bg = "white")
+}
+
+# Helper: print a whole table (all rows) in the console
+show_table <- function(df, title = NULL) {
+  if (!is.null(title)) cat("\n--", title, "--\n")
+  print(as.data.frame(df), row.names = FALSE, digits = 4)
+  invisible(df)
+}
+```
+
+
+# 2. Data dimensions and structure ----------------------------
+
+
+```{r}
+show_table(tibble(
+  set = c("EX Dragon Frontiers", "Prismatic Evolutions"),
+  rows = c(nrow(frontiers_raw), nrow(prismatic_raw)),
+  columns = c(ncol(frontiers_raw), ncol(prismatic_raw)),
+  products = c(n_distinct(frontiers_raw$productId), n_distinct(prismatic_raw$productId))
+  ), "Size of each dataset")
+
+glimpse(frontiers_raw)
+glimpse(prismatic_raw)
+
+```
+
+## 2.2 Column and category cross referencing ------------------
+
+```{r}
+cat("\nColumns only in Prismatic:", setdiff(names(prismatic_raw), names(frontiers_raw)), "\n")
+cat("Columns only in EX Dragon Frontiers:", setdiff(names(frontiers_raw), names(prismatic_raw)), "\n")
+```
+```{r}
+compare_counts <- function(col) {
+  bind_rows(`EX Dragon Frontiers`            = count(frontiers_raw,  value = .data[[col]]),
+            `Prismatic Evolutions` = count(prismatic_raw, value = .data[[col]]),
+            .id = "set") %>%
+    pivot_wider(names_from = set, values_from = n, values_fill = 0)
+}
+
+show_table(compare_counts("extRarity"), "Rarity labels")
+show_table(compare_counts("extCardType"), "Card type labels")
+show_table(compare_counts("extStage"), "Stage labels")
+show_table(compare_counts("subTypeName"), "Printing labels")
+show_table(compare_counts("extResistance"), "Resistance labels")
+
+```
+# *Rarity issue: Modern era prints use new names for rarity designations, such as "special illustration rare" 
+# *Trainer card redundancy
+# *More specificity in product and print type for modern era - pokeball print finish in Prismatic for example 
+# Dragon Frontiers uses the Delta Species gimmick and sometimes carries a number as well
+# Gold Star cards - Charizard and Mew deserve their own tier due to being far more rare than standard rares!
+
+```{r}
+show_table(frontiers_raw %>%
+             filter(str_detect(name, "Horsea|Star")) %>%
+             select(name, extNumber, extRarity, subTypeName, marketPrice),
+           "Example names in Dragon Frontiers")
+
+show_table(frontiers_raw %>% count(extHP == 0, extStage), "HP = 0 by stage (Dragon Frontiers)")
+```
+
+
+## 2.3 N/A values ----
+
+```{r}
+# What variables yield missing values?
+
+missing_by_set <- bind_rows(`EX Dragon Frontiers` = frontiers_raw,
+                            `Prismatic Evolutions` = prismatic_raw, .id = "set") %>%
+  group_by(set) %>%
+  summarise(across(c(extNumber, extRarity, extHP, extWeakness, extResistance,
+                     marketPrice, directLowPrice), ~ mean(is.na(.)))) %>%
+  pivot_longer(-set, names_to = "column", values_to = "pct_missing")
+
+show_table(missing_by_set %>% pivot_wider(names_from = set, values_from = pct_missing),
+           "Share missing by column")
+
+show_plot(
+  ggplot(missing_by_set, aes(pct_missing, fct_reorder(column, pct_missing), fill = set)) +
+    geom_col(position = "dodge") +
+    scale_fill_manual(values = set_colours) +
+    scale_x_continuous(labels = percent) +
+    labs(title = "Share of missing values by column and set", x = NULL, y = NULL, fill = NULL),
+  "01_missing_values.png")
+```
+#Missing "direct" low price - not clear what this metric means for original dataset
+#Most of the issues come from sealed products, since they don't have a set rarity, and trainer cards, since they don't have weaknesses like typical Pokemon do
+
+```{r}
+show_table(bind_rows(frontiers_raw, prismatic_raw) %>%
+             filter(is.na(marketPrice)) %>%
+             select(name, subTypeName, lowPrice, midPrice, highPrice, marketPrice),
+           "Products without a market price")
+```
+# The booster and Charizard chase card don't have recent sales because they are so rare -- removing them would defeat the purpose, since they're the most valuable items -- so we need to keep whatever value is available for it (even if it's lowPrice or midPrice)
+
+
+# 3 Cleaning and wrangling ------------------------------------
+
+## 3.1 Cleaning ----
+
+```{r}
+#Remove html junk --> thank you internet <3
+
+strip_html <- function(x) {
+  x %>% str_replace_all("<br>", " ") %>% str_replace_all("<[^>]+>", "") %>% str_squish()
+}
+
+
+trainer_stages <- c("Supporter", "Tool", "Stadium", "Trainer")
+
+clean_set <- function(df, set_name) {
+  df %>%
+    mutate(across(any_of("extUPC"), as.character)) %>%
+    select(-categoryId, -groupId, -imageCount, -imageUrl, -url, -cleanName) %>%
+    mutate(
+      set        = set_name,
+      modifiedOn = as_datetime(modifiedOn),
+       # --- Trainer / Energy labels -------------------------------------------
+      # Dragon Frontiers: the sub-type is reliable in extStage, so use it
+      # (generic "Trainer" items like Switch / Old Rod become "Item").
+      extCardType = case_when(
+        extStage %in% trainer_stages   ~ recode(extStage, Trainer = "Item"),
+        extStage == "Special Energy"   ~ "Special Energy",
+        TRUE                           ~ extCardType
+      ),
+      # Prismatic: "Trainer - Item" -> "Item", "Pokemon Tool" -> "Tool"
+      extCardType = extCardType %>%
+        str_remove("^Trainer - ") %>%
+        str_replace("Pokemon Tool", "Tool"),
+      # stage only applies to Pokemon
+      extStage = if_else(extStage %in% c("Basic", "Stage 1", "Stage 2"), extStage, NA_character_),
+
+      product_class = case_when(
+        extRarity == "Code Card"                                   ~ "Code card",
+        is.na(extNumber)                                           ~ "Sealed product",
+        extCardType %in% c("Item", "Stadium", "Supporter", "Tool") ~ "Trainer",
+        extCardType %in% c("Special Energy", "Energy")             ~ "Energy",
+        TRUE                                                       ~ "Pokemon"
+      ),
+      # --- Fix impossible / placeholder values -------------------------------
+      extHP         = if_else(product_class == "Pokemon", extHP, NA_real_),  # 0 HP -> NA
+      extResistance = na_if(extResistance, "None"),
+
+      # --- Card number & names ----------------------------------------------
+      card_no    = as.integer(str_extract(extNumber, "^\\d+")),
+      set_size   = as.integer(str_extract(extNumber, "\\d+$")),
+      is_secret  = card_no > set_size,
+      is_delta   = str_detect(name, "\\(Delta Species\\)"),
+      card_name  = name %>%
+        str_remove(" \\(Delta Species\\)") %>%
+        str_remove(" \\((Poke|Master) Ball Pattern\\)") %>%
+        str_remove(" - \\d+/\\d+$"),
+      is_ex        = str_detect(card_name, " ex$"),
+      is_gold_star = str_detect(card_name, " Star$"),
+
+      # finish = printing + Prismatic's ball patterns
+      finish = case_when(
+        str_detect(name, "Master Ball Pattern") ~ "Master Ball Pattern",
+        str_detect(name, "Poke Ball Pattern")   ~ "Poke Ball Pattern",
+        TRUE                                    ~ subTypeName
+      ),
+      across(any_of(c("extAttack1", "extAttack2", "extAttack3", "extCardText")), strip_html),
+      weak_code   = str_sub(extWeakness, 1, 1),     # "Rx2" -> "R"
+      resist_code = str_sub(extResistance, 1, 1),   # "F-30" -> "F"
+
+      # --- Analysis price -----------------------------------------------------
+      price        = coalesce(marketPrice, lowPrice),
+      price_source = case_when(!is.na(marketPrice) ~ "market (recent sales)",
+                               !is.na(lowPrice)    ~ "lowest listing (no sales)",
+                               TRUE                ~ "none"),
+      thin_market_flag = lowPrice > 2 * marketPrice
+    )
+}
+
+frontiers <- clean_set(frontiers_raw, "EX Dragon Frontiers")
+prismatic <- clean_set(prismatic_raw, "Prismatic Evolutions")
+
+# Check the cleaning worked
+show_table(frontiers %>% count(product_class, extCardType), "Dragon Frontiers: class x type after cleaning")
+show_table(frontiers %>% filter(is_gold_star) %>% select(name, card_name, extRarity, finish, price, price_source),
+           "Gold Star cards")
+```
+
+## 3.2 Joining sets ----
+
+```{r}
+all_products <- bind_rows(frontiers, prismatic)
+
+show_table(all_products %>% count(set, product_class) %>%
+             pivot_wider(names_from = set, values_from = n, values_fill = 0),
+           "Product classes per set")
+
+#rarity join
+
+rarity_lookup <- tribble(
+  ~set,                   ~extRarity,                  ~rarity_tier,
+  "EX Dragon Frontiers", "Common", "1 Common",
+  "EX Dragon Frontiers", "Uncommon", "2 Uncommon",
+  "EX Dragon Frontiers", "Rare", "3 Rare / Holo Rare",
+  "EX Dragon Frontiers", "Holo Rare", "3 Rare / Holo Rare",
+  "EX Dragon Frontiers", "Ultra Rare", "4 ex / Ultra Rare",
+  #Gold Star override below
+  "Prismatic Evolutions", "Common", "1 Common",
+  "Prismatic Evolutions", "Uncommon", "2 Uncommon",
+  "Prismatic Evolutions", "Rare", "3 Rare / Holo Rare",
+  "Prismatic Evolutions", "Double Rare", "4 ex / Ultra Rare",
+  "Prismatic Evolutions", "Ultra Rare", "4 ex / Ultra Rare",
+  "Prismatic Evolutions", "ACE SPEC Rare", "4 ex / Ultra Rare",
+  "Prismatic Evolutions", "Special Illustration Rare", "5 Secret / Chase", "Prismatic Evolutions", "Hyper Rare", "5 Secret / Chase"
+)
+
+#energy join
+
+energy_lookup <- tibble(
+  code   = c("C", "D", "F", "G", "L", "M", "N", "P", "R", "W"),
+  energy = c("Colorless", "Darkness", "Fighting", "Grass", "Lightning", "Metal", "Dragon", "Psychic", "Fire", "Water")
+)
+
+all_products <- all_products %>%
+  left_join(rarity_lookup, by = c("set", "extRarity")) %>%
+  #Gold Star override
+    mutate(rarity_tier = if_else(is_gold_star, "5 Secret / Chase", rarity_tier)) %>%
+  left_join(energy_lookup, by = c("weak_code" = "code")) %>%
+  rename(weakness = energy) %>%
+  mutate(rarity_tier = factor(rarity_tier),
+         finish = factor(finish, levels = c("Normal", "Reverse Holofoil", "Holofoil", "Poke Ball Pattern", "Master Ball Pattern")))
+
+cat("\nCards without a rarity tier after the join (should be 0):",
+    all_products %>% filter(product_class %in% c("Pokemon", "Trainer"), is.na(rarity_tier)) %>% nrow(),
+    "\n")
+```
+## 3.3 Product type ----
+```{r}
+# singles = individual cards with a price (no sealed, no code cards)
+singles <- all_products %>%
+  filter(product_class %in% c("Pokemon", "Trainer", "Energy"), !is.na(price))
+
+sealed <- all_products %>% filter(product_class == "Sealed product")
+
+# one row per distinct card (set + card number), regardless of finish
+card_level <- singles %>% distinct(set, extNumber, .keep_all = TRUE)
+
+show_table(singles    %>% count(set), "Singles (card x finish rows)")
+show_table(card_level %>% count(set), "Distinct cards")
+show_table(singles %>% count(set, price_source), "Where the analysis price comes from")
+
+## 3.5 Reshape: finishes side-by-side for each card ----
+cat("\nDuplicate set + number + finish rows (should be 0):",
+    singles %>% count(set, extNumber, finish) %>% filter(n > 1) %>% nrow(), "\n")
+
+finish_wide <- singles %>%
+  select(set, extNumber, card_name, rarity_tier, finish, price) %>%
+  pivot_wider(names_from = finish, values_from = price)
+
+print(head(finish_wide, 10))
+```
+#still NA values in holofoil because not every card has a holofoil!
+
+# 4. Vizualizations -------------------------------------------
+
+## 4.1 Rarity distribution ----
+
+```{r}
+show_plot(
+  card_level %>%
+    count(set, rarity_tier) %>%
+    group_by(set) %>% mutate(share = n / sum(n)) %>%
+    ggplot(aes(rarity_tier, share, fill = set)) +
+    geom_col(position = "dodge") +
+    scale_fill_manual(values = set_colours) +
+    scale_y_continuous(labels = percent) +
+    labs(title = "Rarity-tier mix of each set (distinct cards)", x = NULL, y = "Share of cards", fill = NULL) +
+    theme(axis.text.x = element_text(angle = 15, hjust = 1)),
+  "02_rarity_mix.png")
+
+show_table(card_level %>%
+             count(set, product_class) %>%
+             group_by(set) %>% mutate(share = percent(n / sum(n), 1)),
+           "Pokemon / Trainer / Energy share (distinct cards)")
+
+show_table(card_level %>%
+             filter(set == "EX Dragon Frontiers", product_class == "Pokemon") %>%
+             count(is_delta),
+           "Dragon Frontiers: Delta Species Pokemon")
+```
+
+## 4.2 General price distribution ----
+
+```{r}
+show_table(singles %>%
+             group_by(set) %>%
+             summarise(n = n(),
+                       median = median(price),
+                       mean   = mean(price),
+                       p90    = quantile(price, .9),
+                       max    = max(price),
+                       share_under_1 = mean(price < 1),
+                       total_value = sum(price)),
+           "Price summary for singles")
+
+show_plot(
+  ggplot(singles, aes(price, fill = set)) +
+    geom_density(alpha = .5) +
+    scale_x_log10(labels = dollar) +
+    scale_fill_manual(values = set_colours) +
+    labs(title = "Price distribution of singles (log scale)",
+         x = "Price (log10)", y = "Density", fill = NULL),
+  "03_price_distribution.png")
+```
+## 4.3 Price & rarity ----
+
+```{r}
+show_table(singles %>%
+             group_by(set, rarity_tier) %>%
+             summarise(n = n(), median = median(price), max = max(price), .groups = "drop"),
+           "Price by rarity tier")
+
+show_plot(
+  ggplot(singles, aes(rarity_tier, price, fill = set)) +
+    geom_boxplot(alpha = .7, outlier.size = .8) +
+    scale_y_log10(labels = dollar) +
+    scale_fill_manual(values = set_colours) +
+    labs(title = "Price by rarity tier", x = NULL, y = "Price (log)", fill = NULL) +
+    theme(axis.text.x = element_text(angle = 15, hjust = 1)),
+  "04_price_by_tier.png")
+```
+
+## 4.4 Price & Holo type (finish) ----
+
+```{r}
+show_table(singles %>%
+             group_by(set, finish) %>%
+             summarise(n = n(), median = median(price), mean = mean(price), .groups = "drop"),
+           "Price by finish")
+
+show_plot(
+  ggplot(singles, aes(finish, price, fill = set)) +
+    geom_boxplot(alpha = .7, outlier.size = .8) +
+    scale_y_log10(labels = dollar) +
+    scale_fill_manual(values = set_colours) +
+    labs(title = "Price by finish", x = NULL, y = "Price (log)", fill = NULL) +
+    theme(axis.text.x = element_text(angle = 15, hjust = 1)),
+  "05_price_by_finish.png")
+```
+## 4.5 Value skew
+
+```{r}
+concentration <- singles %>%
+  group_by(set) %>%
+  arrange(desc(price), .by_group = TRUE) %>%
+  mutate(rank_share  = row_number() / n(),
+         value_share = cumsum(price) / sum(price))
+
+show_plot(
+  ggplot(concentration, aes(rank_share, value_share, colour = set)) +
+    geom_line(linewidth = 1.2) +
+    geom_abline(linetype = "dashed", colour = "grey60") +
+    scale_colour_manual(values = set_colours) +
+    scale_x_continuous(labels = percent) + scale_y_continuous(labels = percent) +
+    labs(title = "Cumulative share of set value, most expensive cards first",
+         x = "Share of singles (ranked by price)", y = "Share of total value", colour = NULL),
+  "06_value_concentration.png")
+
+```
+## 4.6 Top cards per set
+```{r}
+top10 <- concentration %>%
+  summarise(top10_share_of_value = sum(price[row_number() <= 10]) / sum(price))
+show_table(top10, "Share of total singles value held by the top 10 cards")
+
+show_table(singles %>%
+             group_by(set) %>%
+             slice_max(price, n = 10) %>%
+             select(set, name, extRarity, finish, price, price_source),
+           "Top 10 singles per set")
+
+
+show_table(singles %>%
+             group_by(set) %>%
+             slice_max(price, n = 10) %>%
+             select(set, name, extRarity, finish, price, price_source),
+           "Top 10 singles per set")
+
+show_table(singles %>%
+             group_by(set) %>%
+             slice_max(highPrice, n = 10) %>%
+             select(set, name, extRarity, finish, marketPrice),
+           "Top 10 most valuable cards per set")
+```
+## 4.7 Sealed products ----
+```{r}
+show_table(sealed %>%
+             select(set, name, price, price_source) %>%
+             arrange(set, desc(price)),
+           "Sealed products")
+
+
+pack <- sealed %>%
+  filter(str_detect(name, "Booster Pack$")) %>%
+  select(set, name, price, price_source)
+show_table(pack, "Booster pack price")
+```
+## 4.8 Card typing ----
+```{r}
+show_plot(
+  card_level %>%
+    filter(!is.na(extCardType)) %>%
+    count(set, extCardType) %>%
+    group_by(set) %>% mutate(share = n / sum(n)) %>%
+    ggplot(aes(share, fct_reorder(extCardType, share), fill = set)) +
+    geom_col(position = "dodge") +
+    scale_fill_manual(values = set_colours) +
+    scale_x_continuous(labels = percent) +
+    labs(title = "Card type mix (distinct cards)", x = "Share of set", y = NULL, fill = NULL),
+  "08_card_types.png", height = 6)
+```
+# 5. Analysis -------------------------------------------------
+
+# The data mostly functions as expected:
+# * The high volume of modern common cards printed has made the few chase cards increasingly lucrative. It may cost a lot of money buying sealed products, especially when considering how many cards will end up being worth less than $5. 
+# * Older cards, even common ones, are worth far more on average. 
+# * The price ceiling for the Dragon Frontiers set is far higher.
+
+# 6. Questions ------------------------------------------------
+
+# Is this an accurate representation of the market when many major sales occur on convention floors through cash transactions?
+
+# How might artificial market manipulation influence online bartering? Sales data over time could show large price spikes and their impact. 
+
+# How have the sets changed over time? Dragon Frontiers used to sit on store shelves, while Prismatic caused arrests from fights breaking out -- and now, Dragon Frontiers is worth far more. 
+
+# How does overall card print population impact the price? Modern chase cards have higher print volume than older ones due to more people investing in the hobby today.
+
+# How do PSA grades factor in? What cards are worth sending in for grading (when grading costs ~$85 per card plus shipping)?
